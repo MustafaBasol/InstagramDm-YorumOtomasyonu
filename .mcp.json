@@ -4,10 +4,10 @@
       "type": "http",
       "url": "https://mcp.supabase.com/mcp",
       "headers": {
-        "Authorization": "Bearer sbp_9058a6439d5a4ef385d8a93e67fe88571524a17d"
+        "Authorization": "Bearer ..."
       },
       "env": {
-        "SUPABASE_PROJECT_REF": "ywfnkagarwujksxbuxtb"
+        "SUPABASE_PROJECT_REF": "..."
       }
     }
   }
