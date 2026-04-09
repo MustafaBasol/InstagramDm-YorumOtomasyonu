@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { requireApiAuth } from "@/lib/auth";
 import { updateConversationMode } from "@/lib/conversations";
 import type { ConversationMode } from "@/lib/types";
 
@@ -11,6 +12,12 @@ export async function PATCH(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
+  const unauthorized = requireApiAuth(request);
+
+  if (unauthorized) {
+    return unauthorized;
+  }
+
   const { id } = await context.params;
   const body = (await request.json()) as { mode?: ConversationMode };
 
@@ -22,4 +29,3 @@ export async function PATCH(
 
   return NextResponse.json({ conversation });
 }
-

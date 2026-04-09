@@ -17,6 +17,9 @@ export const serverEnv = {
   supabaseUrl: () => requireEnv("NEXT_PUBLIC_SUPABASE_URL"),
   supabaseAnonKey: () => requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
   supabaseServiceRoleKey: () => requireEnv("SUPABASE_SERVICE_ROLE_KEY"),
+  dashboardUsername: () => requireEnv("DASHBOARD_USERNAME"),
+  dashboardPassword: () => requireEnv("DASHBOARD_PASSWORD"),
+  appAuthSecret: () => requireEnv("APP_AUTH_SECRET"),
   aiModel: () => process.env.AI_MODEL ?? "google/gemma-3-12b-it:free",
   appUrl: () => process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3001",
 };

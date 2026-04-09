@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { requireApiAuth } from "@/lib/auth";
 import {
   getConversationById,
   insertAssistantMessage,
@@ -13,6 +14,12 @@ export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
+  const unauthorized = requireApiAuth(request);
+
+  if (unauthorized) {
+    return unauthorized;
+  }
+
   const { id } = await context.params;
   const body = (await request.json()) as { text?: string };
   const text = body.text?.trim();
@@ -40,4 +47,3 @@ export async function POST(
 
   return NextResponse.json({ ok: true });
 }
-

@@ -2,9 +2,8 @@
 "use client";
 
 import Image from "next/image";
-import { startTransition, useEffect, useEffectEvent, useRef, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 
-import { createBrowserClient } from "@/lib/supabase/browser";
 import type {
   CommentMessage,
   CommentThread,
@@ -37,6 +36,11 @@ async function fetchJson<T>(input: RequestInfo, init?: RequestInit): Promise<T> 
   const data = (await response.json()) as T & { error?: string };
 
   if (!response.ok) {
+    if (response.status === 401) {
+      window.location.href = "/login";
+      throw new Error("Session expired.");
+    }
+
     throw new Error(data.error ?? "Request failed.");
   }
 
@@ -119,6 +123,7 @@ export function DashboardShell({ initialConversations }: DashboardShellProps) {
   const [commentDraft, setCommentDraft] = useState("");
   const [isLoadingCommentMessages, setIsLoadingCommentMessages] = useState(false);
   const [isSendingCommentReply, setIsSendingCommentReply] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const activeConversationIdRef = useRef<string | null>(activeConversationId);
   const activeCommentThreadIdRef = useRef<string | null>(activeCommentThreadId);
@@ -250,52 +255,26 @@ export function DashboardShell({ initialConversations }: DashboardShellProps) {
     void loadCommentMessages(activeCommentThreadId).catch(setError);
   }, [activeCommentThreadId]);
 
-  const onRealtimeChange = useEffectEvent(() => {
-    startTransition(() => {
-      void refreshConversations(activeConversationIdRef.current).catch(setError);
-      void refreshCommentThreads(activeCommentThreadIdRef.current).catch(setError);
-
-      if (activeConversationIdRef.current) {
-        void loadMessages(activeConversationIdRef.current).catch(setError);
-      }
-
-      if (activeCommentThreadIdRef.current) {
-        void loadCommentMessages(activeCommentThreadIdRef.current).catch(setError);
-      }
-    });
-  });
-
   useEffect(() => {
-    const supabase = createBrowserClient();
-    const channel = supabase
-      .channel("instagram-dashboard")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "instagram_conversations" },
-        onRealtimeChange,
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "instagram_messages" },
-        onRealtimeChange,
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "instagram_comment_replies" },
-        onRealtimeChange,
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "instagram_comment_messages" },
-        onRealtimeChange,
-      )
-      .subscribe();
+    const intervalId = window.setInterval(() => {
+      startTransition(() => {
+        void refreshConversations(activeConversationIdRef.current).catch(setError);
+        void refreshCommentThreads(activeCommentThreadIdRef.current).catch(setError);
+
+        if (activeConversationIdRef.current) {
+          void loadMessages(activeConversationIdRef.current).catch(setError);
+        }
+
+        if (activeCommentThreadIdRef.current) {
+          void loadCommentMessages(activeCommentThreadIdRef.current).catch(setError);
+        }
+      });
+    }, 15000);
 
     return () => {
-      void supabase.removeChannel(channel);
+      window.clearInterval(intervalId);
     };
-  }, [onRealtimeChange]);
-
+  }, []);
   async function handleModeChange(mode: ConversationMode) {
     if (!activeConversation) {
       return;
@@ -364,6 +343,20 @@ export function DashboardShell({ initialConversations }: DashboardShellProps) {
     }
   }
 
+  async function handleLogout() {
+    setIsLoggingOut(true);
+
+    try {
+      await fetchJson("/api/auth/logout", {
+        method: "POST",
+      });
+    } catch {
+      // Redirect regardless of API result so an expired session can still return to login.
+    } finally {
+      window.location.href = "/login";
+    }
+  }
+
   const pendingCommentCount = commentThreads.filter((thread) => thread.status === "pending").length;
 
   return (
@@ -382,18 +375,28 @@ export function DashboardShell({ initialConversations }: DashboardShellProps) {
                 AI handles both DMs and comments. You can monitor comment threads and continue manually any time.
               </p>
             </div>
-            <div className="grid gap-3 text-sm text-slate-200 sm:grid-cols-3">
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                <div className="text-slate-400">Conversations</div>
-                <div className="mt-1 text-2xl font-semibold text-white">{conversations.length}</div>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                <div className="text-slate-400">Comment Threads</div>
-                <div className="mt-1 text-2xl font-semibold text-white">{commentThreads.length}</div>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                <div className="text-slate-400">Comments Pending</div>
-                <div className="mt-1 text-2xl font-semibold text-white">{pendingCommentCount}</div>
+            <div className="flex flex-col gap-3 text-sm text-slate-200 sm:min-w-[280px]">
+              <button
+                type="button"
+                onClick={() => void handleLogout()}
+                disabled={isLoggingOut}
+                className="self-end rounded-full border border-white/20 bg-white/5 px-4 py-2 text-xs font-medium uppercase tracking-[0.2em] text-slate-200 transition hover:border-white/35 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isLoggingOut ? "Signing out..." : "Sign out"}
+              </button>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                  <div className="text-slate-400">Conversations</div>
+                  <div className="mt-1 text-2xl font-semibold text-white">{conversations.length}</div>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                  <div className="text-slate-400">Comment Threads</div>
+                  <div className="mt-1 text-2xl font-semibold text-white">{commentThreads.length}</div>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                  <div className="text-slate-400">Comments Pending</div>
+                  <div className="mt-1 text-2xl font-semibold text-white">{pendingCommentCount}</div>
+                </div>
               </div>
             </div>
           </div>
@@ -810,4 +813,5 @@ export function DashboardShell({ initialConversations }: DashboardShellProps) {
     </main>
   );
 }
+
 
