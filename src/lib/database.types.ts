@@ -9,6 +9,24 @@ import type {
 export interface Database {
   public: {
     Tables: {
+      automation_settings: {
+        Row: {
+          id: number;
+          automation_enabled: boolean;
+          updated_at: string;
+        };
+        Insert: {
+          id?: number;
+          automation_enabled?: boolean;
+          updated_at?: string;
+        };
+        Update: {
+          id?: number;
+          automation_enabled?: boolean;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       instagram_conversations: {
         Row: {
           id: string;

@@ -5,6 +5,7 @@ import Image from "next/image";
 import { startTransition, useEffect, useRef, useState } from "react";
 
 import type {
+  AutomationSettings,
   CommentMessage,
   CommentThread,
   Conversation,
@@ -124,6 +125,8 @@ export function DashboardShell({ initialConversations }: DashboardShellProps) {
   const [isLoadingCommentMessages, setIsLoadingCommentMessages] = useState(false);
   const [isSendingCommentReply, setIsSendingCommentReply] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [settings, setSettings] = useState<AutomationSettings | null>(null);
+  const [isUpdatingAutomation, setIsUpdatingAutomation] = useState(false);
 
   const activeConversationIdRef = useRef<string | null>(activeConversationId);
   const activeCommentThreadIdRef = useRef<string | null>(activeCommentThreadId);
@@ -134,6 +137,8 @@ export function DashboardShell({ initialConversations }: DashboardShellProps) {
 
   const activeCommentThread =
     commentThreads.find((thread) => thread.id === activeCommentThreadId) ?? null;
+
+  const automationEnabled = settings?.automation_enabled ?? true;
 
   function setError(error: unknown) {
     if (error instanceof Error) {
@@ -164,6 +169,11 @@ export function DashboardShell({ initialConversations }: DashboardShellProps) {
     }
   }, [activeCommentThreadId, commentThreads]);
 
+  async function loadSettings() {
+    const data = await fetchJson<{ settings: AutomationSettings }>("/api/settings");
+    setSettings(data.settings);
+  }
+
   async function refreshConversations(preferredConversationId?: string | null) {
     const data = await fetchJson<{ conversations: Conversation[] }>("/api/conversations");
 
@@ -185,8 +195,15 @@ export function DashboardShell({ initialConversations }: DashboardShellProps) {
     }
   }
 
-  async function loadMessages(conversationId: string) {
-    setIsLoadingMessages(true);
+  async function loadMessages(
+    conversationId: string,
+    options?: { showLoading?: boolean },
+  ) {
+    const showLoading = options?.showLoading ?? true;
+
+    if (showLoading) {
+      setIsLoadingMessages(true);
+    }
 
     try {
       const data = await fetchJson<{ messages: Message[] }>(
@@ -194,7 +211,9 @@ export function DashboardShell({ initialConversations }: DashboardShellProps) {
       );
       setMessages(data.messages);
     } finally {
-      setIsLoadingMessages(false);
+      if (showLoading) {
+        setIsLoadingMessages(false);
+      }
     }
   }
 
@@ -217,8 +236,15 @@ export function DashboardShell({ initialConversations }: DashboardShellProps) {
     }
   }
 
-  async function loadCommentMessages(threadId: string) {
-    setIsLoadingCommentMessages(true);
+  async function loadCommentMessages(
+    threadId: string,
+    options?: { showLoading?: boolean },
+  ) {
+    const showLoading = options?.showLoading ?? true;
+
+    if (showLoading) {
+      setIsLoadingCommentMessages(true);
+    }
 
     try {
       const data = await fetchJson<{ messages: CommentMessage[] }>(
@@ -226,7 +252,9 @@ export function DashboardShell({ initialConversations }: DashboardShellProps) {
       );
       setCommentMessages(data.messages);
     } finally {
-      setIsLoadingCommentMessages(false);
+      if (showLoading) {
+        setIsLoadingCommentMessages(false);
+      }
     }
   }
   useEffect(() => {
@@ -234,7 +262,7 @@ export function DashboardShell({ initialConversations }: DashboardShellProps) {
       void refreshConversations().catch(setError);
     }
 
-    void refreshCommentThreads().catch(setError);
+    void Promise.all([loadSettings(), refreshCommentThreads()]).catch(setError);
   }, [initialConversations.length]);
 
   useEffect(() => {
@@ -262,14 +290,14 @@ export function DashboardShell({ initialConversations }: DashboardShellProps) {
         void refreshCommentThreads(activeCommentThreadIdRef.current).catch(setError);
 
         if (activeConversationIdRef.current) {
-          void loadMessages(activeConversationIdRef.current).catch(setError);
+          void loadMessages(activeConversationIdRef.current, { showLoading: false }).catch(setError);
         }
 
         if (activeCommentThreadIdRef.current) {
-          void loadCommentMessages(activeCommentThreadIdRef.current).catch(setError);
+          void loadCommentMessages(activeCommentThreadIdRef.current, { showLoading: false }).catch(setError);
         }
       });
-    }, 15000);
+    }, 30000);
 
     return () => {
       window.clearInterval(intervalId);
@@ -295,6 +323,22 @@ export function DashboardShell({ initialConversations }: DashboardShellProps) {
     }
   }
 
+  async function handleAutomationToggle(nextValue: boolean) {
+    setIsUpdatingAutomation(true);
+
+    try {
+      const data = await fetchJson<{ settings: AutomationSettings }>("/api/settings", {
+        method: "PATCH",
+        body: JSON.stringify({ automationEnabled: nextValue }),
+      });
+      setSettings(data.settings);
+    } catch (error) {
+      setError(error);
+    } finally {
+      setIsUpdatingAutomation(false);
+    }
+  }
+
   async function handleSend() {
     if (!activeConversation || !draft.trim()) {
       return;
@@ -310,7 +354,7 @@ export function DashboardShell({ initialConversations }: DashboardShellProps) {
       setDraft("");
       await Promise.all([
         refreshConversations(activeConversation.id),
-        loadMessages(activeConversation.id),
+        loadMessages(activeConversation.id, { showLoading: false }),
       ]);
     } catch (error) {
       setError(error);
@@ -334,7 +378,7 @@ export function DashboardShell({ initialConversations }: DashboardShellProps) {
       setCommentDraft("");
       await Promise.all([
         refreshCommentThreads(activeCommentThread.id),
-        loadCommentMessages(activeCommentThread.id),
+        loadCommentMessages(activeCommentThread.id, { showLoading: false }),
       ]);
     } catch (error) {
       setError(error);
@@ -375,28 +419,66 @@ export function DashboardShell({ initialConversations }: DashboardShellProps) {
                 AI handles both DMs and comments. You can monitor comment threads and continue manually any time.
               </p>
             </div>
-            <div className="flex flex-col gap-3 text-sm text-slate-200 sm:min-w-[280px]">
-              <button
-                type="button"
-                onClick={() => void handleLogout()}
-                disabled={isLoggingOut}
-                className="self-end rounded-full border border-white/20 bg-white/5 px-4 py-2 text-xs font-medium uppercase tracking-[0.2em] text-slate-200 transition hover:border-white/35 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isLoggingOut ? "Signing out..." : "Sign out"}
-              </button>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                  <div className="text-slate-400">Conversations</div>
-                  <div className="mt-1 text-2xl font-semibold text-white">{conversations.length}</div>
+            <div className="flex flex-col gap-3 text-sm text-slate-200 sm:min-w-[320px]">
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.24em] text-slate-400">
+                    Global Automation
+                  </div>
+                  <div className="mt-1 text-sm text-white">
+                    {automationEnabled ? "AI replies are active." : "New messages are recorded only."}
+                  </div>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                  <div className="text-slate-400">Comment Threads</div>
-                  <div className="mt-1 text-2xl font-semibold text-white">{commentThreads.length}</div>
+                <div className="inline-flex rounded-full border border-white/10 bg-[#0b1120]/70 p-1">
+                  <button
+                    type="button"
+                    disabled={isUpdatingAutomation || settings === null}
+                    onClick={() => void handleAutomationToggle(true)}
+                    className={`rounded-full px-3 py-2 text-xs transition ${
+                      automationEnabled
+                        ? "bg-gradient-to-r from-emerald-400 to-teal-500 text-slate-950"
+                        : "text-slate-300 hover:text-white"
+                    }`}
+                  >
+                    On
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isUpdatingAutomation || settings === null}
+                    onClick={() => void handleAutomationToggle(false)}
+                    className={`rounded-full px-3 py-2 text-xs transition ${
+                      !automationEnabled
+                        ? "bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950"
+                        : "text-slate-300 hover:text-white"
+                    }`}
+                  >
+                    Off
+                  </button>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                  <div className="text-slate-400">Comments Pending</div>
-                  <div className="mt-1 text-2xl font-semibold text-white">{pendingCommentCount}</div>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="grid flex-1 gap-3 sm:grid-cols-3">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                    <div className="text-slate-400">Conversations</div>
+                    <div className="mt-1 text-2xl font-semibold text-white">{conversations.length}</div>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                    <div className="text-slate-400">Comment Threads</div>
+                    <div className="mt-1 text-2xl font-semibold text-white">{commentThreads.length}</div>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                    <div className="text-slate-400">Comments Pending</div>
+                    <div className="mt-1 text-2xl font-semibold text-white">{pendingCommentCount}</div>
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => void handleLogout()}
+                  disabled={isLoggingOut}
+                  className="shrink-0 rounded-full border border-white/20 bg-white/5 px-4 py-2 text-xs font-medium uppercase tracking-[0.2em] text-slate-200 transition hover:border-white/35 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isLoggingOut ? "Signing out..." : "Sign out"}
+                </button>
               </div>
             </div>
           </div>
@@ -813,5 +895,15 @@ export function DashboardShell({ initialConversations }: DashboardShellProps) {
     </main>
   );
 }
+
+
+
+
+
+
+
+
+
+
 
 

@@ -4,6 +4,12 @@ export type MessageSource = "instagram" | "agent" | "human";
 export type CommentReplyStatus = "pending" | "replied" | "failed";
 export type CommentMessageChannel = "comment" | "dm";
 
+export interface AutomationSettings {
+  id: number;
+  automation_enabled: boolean;
+  updated_at: string;
+}
+
 export interface InstagramProfile {
   name: string | null;
   username: string | null;
